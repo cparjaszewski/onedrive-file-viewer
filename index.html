@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .upload-container {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .file-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .file-item {
+            padding: 10px;
+            border: 1px solid #eee;
+            margin-bottom: 5px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .file-item:hover {
+            background-color: #f5f5f5;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            position: relative;
+            background-color: white;
+            margin: 50px auto;
+            padding: 20px;
+            width: 90%;
+            max-width: 900px;
+            height: 80vh;
+        }
+
+        .close {
+            position: absolute;
+            right: 20px;
+            top: 10px;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 1001;
+            color: #333;
+            background: white;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .close:hover {
+            background: #f0f0f0;
+        }
+
+        iframe {
+            width: 100%;
+            height: calc(100% - 20px);
+            border: none;
+            background: white;
+        }
+
+        .preview-container {
+            width: 100%;
+            height: 100%;
+            background: white;
+            overflow: hidden;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            width: 100%;
+            background: white;
+        }
+
+        .loading::after {
+            content: "Loading preview...";
+            font-size: 1.2em;
+            color: #666;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>File Viewer</h1>
+    
+    <div class="upload-container">
+        <input type="file" id="fileInput" multiple>
+        <p>or drag and drop files here</p>
+    </div>
+
+    <ul class="file-list" id="fileList"></ul>
+
+    <div class="modal" id="previewModal">
+        <div class="modal-content">
+            <span class="close" id="closeModal">&times;</span>
+            <div id="previewContent" class="preview-container"></div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const modal = document.getElementById('previewModal');
+        const closeModal = document.getElementById('closeModal');
+        const previewContent = document.getElementById('previewContent');
+        const uploadContainer = document.querySelector('.upload-container');
+
+        // Store files in memory
+        const files = new Map();
+
+        // Handle file selection
+        fileInput.addEventListener('change', handleFiles);
+
+        // Handle drag and drop
+        uploadContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadContainer.style.borderColor = '#000';
+        });
+
+        uploadContainer.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            uploadContainer.style.borderColor = '#ccc';
+        });
+
+        uploadContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadContainer.style.borderColor = '#ccc';
+            handleFiles({ target: { files: e.dataTransfer.files } });
+        });
+
+        // Close modal when clicking close button or outside
+        closeModal.addEventListener('click', () => {
+            modal.style.display = 'none';
+            previewContent.innerHTML = '';
+        });
+
+        window.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+                previewContent.innerHTML = '';
+            }
+        });
+
+        function handleFiles(event) {
+            const newFiles = event.target.files;
+            
+            for (const file of newFiles) {
+                // Store file in memory
+                const fileId = Date.now() + '-' + file.name;
+                files.set(fileId, file);
+
+                // Create list item
+                const li = document.createElement('li');
+                li.className = 'file-item';
+                li.innerHTML = `
+                    <span>${file.name}</span>
+                    <button onclick="previewFile('${fileId}')">Preview</button>
+                `;
+                fileList.appendChild(li);
+            }
+        }
+
+        async function previewFile(fileId) {
+            const file = files.get(fileId);
+            const fileType = file.name.toLowerCase().split('.').pop();
+            
+            // Check if file is a supported Microsoft Office format
+            const supportedFormats = ['xls', 'xlsx', 'doc', 'docx'];
+            
+            modal.style.display = 'block';
+            previewContent.innerHTML = '<div class="loading"></div>';
+            
+            if (supportedFormats.includes(fileType)) {
+                try {
+                    // Convert file to base64
+                    const base64 = await fileToBase64(file);
+                    
+                    // Create data URL
+                    const dataUrl = `data:${file.type};base64,${base64}`;
+                    
+                    // Create Google Docs Viewer URL
+                    const viewerUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(dataUrl)}`;
+                    
+                    // Create and load the iframe
+                    previewContent.innerHTML = `
+                        <iframe src="${viewerUrl}" frameborder="0" height="100%" width="100%"></iframe>
+                    `;
+                } catch (error) {
+                    previewContent.innerHTML = `
+                        <div style="padding: 20px; text-align: center;">
+                            <p>Error loading preview. Please try downloading the file instead.</p>
+                            <button onclick="downloadFile('${fileId}')">Download File</button>
+                        </div>
+                    `;
+                }
+            } else {
+                previewContent.innerHTML = `
+                    <div style="padding: 20px; text-align: center;">
+                        <p>Preview not available for this file type: ${file.name}</p>
+                        <button onclick="downloadFile('${fileId}')">Download File</button>
+                    </div>
+                `;
+            }
+        }
+
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    const base64 = reader.result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        function downloadFile(fileId) {
+            const file = files.get(fileId);
+            const url = URL.createObjectURL(file);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
